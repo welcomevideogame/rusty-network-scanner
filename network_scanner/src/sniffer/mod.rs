@@ -1,6 +1,5 @@
 use smoltcp::wire::{Ipv4Packet, UdpPacket};
 
-
 pub fn start_sniffer(interface_name: &str, protocol: Option<EthernetProtocol>) -> Receiver<Vec<u8>> {
     let (tx, rx) = mpsc::channel();
 
@@ -48,8 +47,6 @@ fn print_ipv4_packet_info(packet: &Ipv4Packet<&[u8]>) {
     println!("TTL: {}", packet.hop_limit());
     println!("Payload Length: {}", packet.payload().len());
 }
-
-use smoltcp::wire::{Ipv4Packet, UdpPacket};
 
 pub fn decode_dns_packet(packet: &Ipv4Packet<&[u8]>, udp_packet: &UdpPacket<&[u8]>) -> Option<String> {
     let payload = udp_packet.payload();
@@ -228,4 +225,58 @@ pub fn decode_http_packet(packet: &[u8]) -> Option<String> {
         method, uri, version, headers, body
     );
     Some(response)
+}
+
+use smoltcp::wire::{EthernetFrame, EthernetProtocol, Ipv4Packet, TcpPacket, TcpRepr};
+
+pub fn sniff_http_request(packet: &Ipv4Packet<&[u8]>) -> Option<String> {
+    if packet.protocol() != smoltcp::wire::IpProtocol::Tcp {
+        return None;
+    }
+
+    let tcp_packet = TcpPacket::new(packet.payload()).unwrap();
+    let tcp_repr = TcpRepr::parse(&tcp_packet, &packet.src_addr(), &packet.dst_addr()).unwrap();
+
+    if tcp_repr.dst_port != 80 {
+        return None;
+    }
+
+    let payload = tcp_packet.payload();
+    let request = String::from_utf8_lossy(payload);
+    if request.starts_with("GET") || request.starts_with("POST") || request.starts_with("HEAD") {
+        Some(request.to_string())
+    } else {
+        None
+    }
+}
+
+pub fn sniff_http_response(packet: &Ipv4Packet<&[u8]>) -> Option<String> {
+    if packet.protocol() != smoltcp::wire::IpProtocol::Tcp {
+        return None;
+    }
+
+    let tcp_packet = TcpPacket::new(packet.payload()).unwrap();
+    let tcp_repr = TcpRepr::parse(&tcp_packet, &packet.src_addr(), &packet.dst_addr()).unwrap();
+
+    if tcp_repr.src_port != 80 {
+        return None;
+    }
+
+    let payload = tcp_packet.payload();
+    let response = String::from_utf8_lossy(payload);
+    if response.starts_with("HTTP") {
+        Some(response.to_string())
+    } else {
+        None
+    }
+}
+
+pub fn sniff_tcp_packet(packet: &Ipv4Packet<&[u8]>) -> Option<TcpRepr> {
+    if packet.protocol() != smoltcp::wire::IpProtocol::Tcp {
+        return None;
+    }
+
+    let tcp_packet = TcpPacket::new(packet.payload()).unwrap();
+    let tcp_repr = TcpRepr::parse(&tcp_packet, &packet.src_addr(), &packet.dst_addr()).unwrap();
+    Some(tcp_repr)
 }
