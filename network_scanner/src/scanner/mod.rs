@@ -2,7 +2,7 @@ use smoltcp::iface::{EthernetInterface, EthernetInterfaceBuilder, Neighbor, Neig
 use smoltcp::phy::{Device, Medium};
 use smoltcp::socket::SocketSet;
 use smoltcp::time::Instant;
-use smoltcp::wire::{EthernetAddress, EthernetFrame, EthernetProtocol, Ipv4Address, Ipv4Packet};
+use smoltcp::wire::{EthernetAddress, EthernetFrame, EthernetProtocol, Ipv4Address, Ipv4Packet, TcpPacket, TcpRepr};
 use std::collections::BTreeMap;
 use std::io::{stdin, stdout, Write};
 use std::sync::Arc;
@@ -95,4 +95,56 @@ fn create_ethernet_interface(
         .routes(routes);
     let socket_set = SocketSet::new(vec![]);
     (iface_builder, socket_set)
+}
+
+pub fn sniff_http_request(packet: &Ipv4Packet<&[u8]>) -> Option<String> {
+    if packet.protocol() != smoltcp::wire::IpProtocol::Tcp {
+        return None;
+    }
+
+    let tcp_packet = TcpPacket::new(packet.payload()).unwrap();
+    let tcp_repr = TcpRepr::parse(&tcp_packet, &packet.src_addr(), &packet.dst_addr()).unwrap();
+
+    if tcp_repr.dst_port != 80 {
+        return None;
+    }
+
+    let payload = tcp_packet.payload();
+    let request = String::from_utf8_lossy(payload);
+    if request.starts_with("GET") || request.starts_with("POST") || request.starts_with("HEAD") {
+        Some(request.to_string())
+    } else {
+        None
+    }
+}
+
+pub fn sniff_http_response(packet: &Ipv4Packet<&[u8]>) -> Option<String> {
+    if packet.protocol() != smoltcp::wire::IpProtocol::Tcp {
+        return None;
+    }
+
+    let tcp_packet = TcpPacket::new(packet.payload()).unwrap();
+    let tcp_repr = TcpRepr::parse(&tcp_packet, &packet.src_addr(), &packet.dst_addr()).unwrap();
+
+    if tcp_repr.src_port != 80 {
+        return None;
+    }
+
+    let payload = tcp_packet.payload();
+    let response = String::from_utf8_lossy(payload);
+    if response.starts_with("HTTP") {
+        Some(response.to_string())
+    } else {
+        None
+    }
+}
+
+pub fn sniff_tcp_packet(packet: &Ipv4Packet<&[u8]>) -> Option<TcpRepr> {
+    if packet.protocol() != smoltcp::wire::IpProtocol::Tcp {
+        return None;
+    }
+
+    let tcp_packet = TcpPacket::new(packet.payload()).unwrap();
+    let tcp_repr = TcpRepr::parse(&tcp_packet, &packet.src_addr(), &packet.dst_addr()).unwrap();
+    Some(tcp_repr)
 }
