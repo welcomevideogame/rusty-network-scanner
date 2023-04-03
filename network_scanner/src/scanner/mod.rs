@@ -1,9 +1,12 @@
 use smoltcp::iface::{EthernetInterface, EthernetInterfaceBuilder, Neighbor, NeighborCache, Routes};
 use smoltcp::phy::{Device, Medium};
-use smoltcp::wire::{EthernetAddress, EthernetFrame, EthernetProtocol, Ipv4Address};
+use smoltcp::socket::SocketSet;
+use smoltcp::time::Instant;
+use smoltcp::wire::{EthernetAddress, EthernetFrame, EthernetProtocol, Ipv4Address, Ipv4Packet};
 use std::collections::BTreeMap;
 use std::io::{stdin, stdout, Write};
 use std::sync::Arc;
+use std::str::FromStr;
 use tokio::runtime::Runtime;
 use tuntap::{Iface, Mode};
 
@@ -17,7 +20,7 @@ pub fn start_scanner() {
         let mut iface = iface.finalize(());
 
         loop {
-            let timestamp = smoltcp::time::Instant::from_millis(0);
+            let timestamp = Instant::from_millis(0);
 
             match iface.poll(&mut socket_set, timestamp) {
                 Ok(_) => (),
@@ -30,13 +33,39 @@ pub fn start_scanner() {
                 Err(_) => continue,
             };
 
-            let eth_frame = EthernetFrame::new_checked(frame).unwrap();
-            if eth_frame.ethertype() == EthernetProtocol::Ipv4 {
-                let ipv4_packet = smoltcp::wire::Ipv4Packet::new(eth_frame.payload()).unwrap();
-                println!("IP: {}", ipv4_packet.source_addr());
-            }
+            process_frame(frame);
         }
     });
+}
+
+fn process_frame(frame: &[u8]) {
+    let eth_frame = EthernetFrame::new_checked(frame).unwrap();
+    let protocol = input_protocol();
+    if eth_frame.ethertype() == protocol {
+        match protocol {
+            EthernetProtocol::Ipv4 => {
+                let ipv4_packet = Ipv4Packet::new(eth_frame.payload()).unwrap();
+                print_ipv4_packet_info(&ipv4_packet);
+            }
+            // Add more protocols and their respective processing functions here.
+            _ => (),
+        }
+    }
+}
+
+fn input_protocol() -> EthernetProtocol {
+    let mut input = String::new();
+    print!("Enter protocol to filter (e.g., Ipv4): ");
+    stdout().flush().unwrap();
+    stdin().read_line(&mut input).unwrap();
+    EthernetProtocol::from_str(input.trim()).unwrap_or(EthernetProtocol::Ipv4)
+}
+
+fn print_ipv4_packet_info(packet: &Ipv4Packet<&[u8]>) {
+    println!("IP: {}", packet.source_addr());
+    println!("Protocol: {:?}", packet.protocol());
+    println!("TTL: {}", packet.hop_limit());
+    println!("Payload Length: {}", packet.payload().len());
 }
 
 fn get_network_interface() -> Arc<dyn Device> {
@@ -53,7 +82,7 @@ fn create_ethernet_interface(
     device: Arc<dyn Device>,
 ) -> (
     EthernetInterfaceBuilder<'static, 'static, Arc<dyn Device>>,
-    smoltcp::socket::SocketSet<'static, 'static, 'static>,
+    SocketSet<'static, 'static, 'static>,
 ) {
     let ethernet_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x00]);
     let ipv4_addr = Ipv4Address::new(0, 0, 0, 0);
@@ -64,6 +93,6 @@ fn create_ethernet_interface(
         .ipv4_addr(ipv4_addr)
         .neighbor_cache(neighbor_cache)
         .routes(routes);
-    let socket_set = smoltcp::socket::SocketSet::new(vec![]);
+    let socket_set = SocketSet::new(vec![]);
     (iface_builder, socket_set)
 }

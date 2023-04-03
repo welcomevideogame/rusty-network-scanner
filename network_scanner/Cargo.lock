@@ -249,6 +249,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "99227334921fae1a979cf0bfdfcc6b3e5ce376ef57e16fb6fb3ea2ed6095f80c"
 
 [[package]]
+name = "libpcap"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc988b3bbf4f80e00922bec4fb38631f89b55c06d61f0b5efd947bbbd7151073"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -366,6 +375,7 @@ dependencies = [
 name = "network_scanner"
 version = "0.1.0"
 dependencies = [
+ "libpcap",
  "smoltcp",
  "tokio 1.27.0",
  "tuntap",
