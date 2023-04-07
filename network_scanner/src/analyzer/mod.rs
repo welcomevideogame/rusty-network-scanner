@@ -63,3 +63,77 @@ impl NetworkAnalyzer {
         packet_stats
     }
 }
+
+pub fn print_tcp_payload(&self) {
+    let received_packets = self.received_packets.lock().unwrap();
+
+    for (_, packet) in received_packets.iter() {
+        if let Some(eth_payload) = EthernetPacket::payload(&packet) {
+            if packet.get_ethertype() == EtherTypes::Ipv4 {
+                if let Some(ip_packet) = Ipv4Packet::new(eth_payload) {
+                    if ip_packet.get_next_level_protocol() == pnet::packet::ip::IpNextHeaderProtocols::Tcp {
+                        let tcp_packet = TcpPacket::new(ip_packet.payload()).unwrap();
+
+                        if tcp_packet.get_payload().len() > 0 {
+                            let payload_str = str::from_utf8(tcp_packet.get_payload()).unwrap();
+                            println!("{}", payload_str);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn get_top_n_packets(&self, n: usize) -> Vec<(IpAddr, usize)> {
+    let packet_stats = self.get_packet_statistics();
+    let mut heap = BinaryHeap::new();
+
+    for (ip_addr, packet_count) in packet_stats.iter() {
+        if heap.len() < n {
+            heap.push(Reverse((packet_count, ip_addr.clone())));
+        } else if *packet_count > heap.peek().unwrap().0 {
+            heap.pop();
+            heap.push(Reverse((packet_count, ip_addr.clone())));
+        }
+    }
+
+    heap.into_sorted_vec().into_iter().map(|rev| (rev.1, rev.0)).collect()
+}
+
+pub fn get_packet_count(&self, ip_addr: IpAddr) -> usize {
+    let packet_stats = self.get_packet_statistics();
+
+    *packet_stats.get(&ip_addr).unwrap_or(&0)
+}
+
+pub fn count_tcp_payload_chars(&self) -> HashMap<char, usize> {
+    let mut char_counts: HashMap<char, usize> = HashMap::new();
+    let mut seen_payloads: HashSet<Vec<u8>> = HashSet::new();
+
+    let received_packets = self.received_packets.lock().unwrap();
+    for (_, packet) in received_packets.iter() {
+        if let Some(eth_payload) = EthernetPacket::payload(&packet) {
+            if packet.get_ethertype() == EtherTypes::Ipv4 {
+                if let Some(ip_packet) = Ipv4Packet::new(eth_payload) {
+                    if ip_packet.get_next_level_protocol() == pnet::packet::ip::IpNextHeaderProtocols::Tcp {
+                        let tcp_packet = TcpPacket::new(ip_packet.payload()).unwrap();
+
+                        if tcp_packet.get_payload().len() > 0 {
+                            if seen_payloads.insert(tcp_packet.get_payload().to_vec()) {
+                                for b in tcp_packet.get_payload().iter() {
+                                    if (*b as char).is_ascii() {
+                                        let count = char_counts.entry(*b as char).or_insert(0);
+                                        *count += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    char_counts
+}
